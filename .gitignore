@@ -1,0 +1,15 @@
+# Binaries
+orca
+*.exe
+*.out
+
+# Vault files
+*.orca
+vault.orca
+
+# Go
+vendor/
+
+# OS
+.DS_Store
+Thumbs.db
