@@ -25,12 +25,15 @@ class _UnlockScreenState extends State<UnlockScreen> {
 
   Future<void> _unlock() async {
     try {
-      final out = await OrcaBridge.run(['list'], stdin: '${_ctrl.text}\n');
+      final pw = _ctrl.text;
+      final out = await OrcaBridge.run(['list'], stdin: '$pw\n');
+      _ctrl.clear();
       setState(() {
         _entries = out.trim().split('\n').where((e) => e.isNotEmpty).toList();
         _status = 'Unlocked';
       });
     } catch (e) {
+      _ctrl.clear();
       setState(() => _status = 'Error: $e');
     }
   }
