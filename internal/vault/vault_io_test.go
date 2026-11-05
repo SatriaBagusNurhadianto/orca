@@ -38,3 +38,12 @@ func TestSaveAtomicNoPartialOnBadPath(t *testing.T) {
 		t.Fatal("original vault corrupted")
 	}
 }
+
+func TestValidatePathTraversal(t *testing.T) {
+	if err := validatePath("a/../etc/x"); err == nil {
+		t.Fatal("expected traversal rejection")
+	}
+	if err := validatePath("foo\x00bar"); err == nil {
+		t.Fatal("expected NUL rejection")
+	}
+}

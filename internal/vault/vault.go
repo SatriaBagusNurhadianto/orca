@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/SatriaBagusNurhadianto/orca/internal/crypto"
 )
@@ -65,16 +66,53 @@ func validatePath(path string) error {
 	if path == "" {
 		return fmt.Errorf("empty path")
 	}
+	// Reject NUL bytes anywhere.
 	for i := 0; i < len(path); i++ {
 		if path[i] == 0 {
 			return fmt.Errorf("invalid path: NUL byte")
 		}
 	}
-	fi, err := os.Lstat(path)
-	if err == nil && fi.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("vault path is a symlink")
+	// Inspect raw components before cleaning (cleaning hides traversal).
+	for _, part := range splitPath(path) {
+		if part == ".." {
+			return fmt.Errorf("invalid path: traversal component")
+		}
+		if part == "" {
+			// empty component implies // or leading/trailing slash; reject to avoid ambiguity
+			// but allow single leading slash for absolute paths
+		}
+	}
+	// Walk prefixes and reject symlink components.
+	cur := ""
+	sep := string(os.PathSeparator)
+	parts := splitPath(path)
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		if cur == "" {
+			if filepath.IsAbs(path) {
+				cur = sep
+			}
+		}
+		cur = filepath.Join(cur, p)
+		fi, err := os.Lstat(cur)
+		if err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("vault path has symlink component: %s", cur)
+		}
+	}
+	clean := filepath.Clean(path)
+	if clean == "" || clean == "." {
+		return fmt.Errorf("invalid path")
 	}
 	return nil
+}
+
+func splitPath(path string) []string {
+	// normalize both separators
+	s := strings.ReplaceAll(path, "/", string(os.PathSeparator))
+	s = strings.ReplaceAll(s, "\\", string(os.PathSeparator))
+	return strings.Split(s, string(os.PathSeparator))
 }
 
 func Create(path, password string) error {
