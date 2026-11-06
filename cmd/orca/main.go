@@ -12,9 +12,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/term"
 
+	"github.com/SatriaBagusNurhadianto/orca/internal/totp"
 	"github.com/SatriaBagusNurhadianto/orca/internal/vault"
 )
 
@@ -48,6 +50,8 @@ func main() {
 		cmdExport()
 	case "import":
 		cmdImport()
+	case "totp":
+		cmdTotp()
 	default:
 		usage()
 		os.Exit(2)
@@ -56,7 +60,7 @@ func main() {
 
 func usage() {
 	fmt.Println("orca - personal password manager")
-	fmt.Println("commands: init, add, list, get, gen, delete, export, import")
+	fmt.Println("commands: init, add, list, get, gen, delete, export, import, totp")
 }
 
 func vaultPath() string {
@@ -479,6 +483,47 @@ func safeField(fields []string, idx int) string {
 		return strings.TrimSpace(fields[idx])
 	}
 	return ""
+}
+
+func cmdTotp() {
+	if len(os.Args) >= 2 && os.Args[2] == "--gen" {
+		sec, err := totp.GenerateSecret()
+		if err != nil {
+			fmt.Println("error:", err)
+			os.Exit(1)
+		}
+		fmt.Println(sec)
+		return
+	}
+	if len(os.Args) < 3 {
+		fmt.Println("usage: orca totp <id> | orca totp --gen")
+		os.Exit(2)
+	}
+	id := os.Args[2]
+	path := vaultPath()
+	pw := readPassword("Master password: ")
+	v, _, err := vault.Load(path, pw)
+	if err != nil {
+		fmt.Println("error:", err)
+		os.Exit(1)
+	}
+	for _, e := range v.Entries {
+		if e.ID == id && !e.Deleted {
+			if e.TOTP == "" {
+				fmt.Println("no TOTP secret for entry")
+				os.Exit(1)
+			}
+			code, err := totp.Code(e.TOTP, time.Now(), 6, 30)
+			if err != nil {
+				fmt.Println("error:", err)
+				os.Exit(1)
+			}
+			fmt.Println(code)
+			return
+		}
+	}
+	fmt.Println("not found")
+	os.Exit(1)
 }
 
 func cmdGen() {

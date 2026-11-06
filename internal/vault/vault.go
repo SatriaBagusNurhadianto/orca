@@ -25,6 +25,7 @@ type Entry struct {
 	Password  string `json:"password"`
 	URL       string `json:"url"`
 	Notes     string `json:"notes"`
+	TOTP      string `json:"totp,omitempty"`
 	CreatedAt int64  `json:"created_at"`
 	UpdatedAt int64  `json:"updated_at"`
 	Deleted   bool   `json:"deleted,omitempty"`
