@@ -63,6 +63,22 @@ class _UnlockScreenState extends State<UnlockScreen> {
     }
   }
 
+  Future<void> _deleteEntry(String entry) async {
+    final id = entry.split('\t').first;
+    final pw = await _promptPassword();
+    if (pw == null) return;
+    try {
+      await OrcaBridge.run(['delete', id], stdinFields: [pw]);
+      final out = await OrcaBridge.run(['list'], stdinFields: [pw]);
+      setState(() {
+        _entries = out.trim().split('\n').where((e) => e.isNotEmpty).toList();
+        _status = 'Deleted';
+      });
+    } catch (e) {
+      setState(() => _status = 'Error: $e');
+    }
+  }
+
   Future<void> _openDetail(String entry) async {
     final id = entry.split('\t').first;
     final pw = await _promptPassword();
@@ -138,7 +154,7 @@ class _UnlockScreenState extends State<UnlockScreen> {
             Text(_status),
             Expanded(
               child: ListView(
-                children: _entries.map((e) => ListTile(title: Text(e), onTap: () => _openDetail(e))).toList(),
+                children: _entries.map((e) => Dismissible(key: ValueKey(e), onDismissed: (_) => _deleteEntry(e), background: Container(color: Colors.red), child: ListTile(title: Text(e), onTap: () => _openDetail(e)))).toList(),
               ),
             ),
           ],
