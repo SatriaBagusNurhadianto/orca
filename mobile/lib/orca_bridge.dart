@@ -12,7 +12,7 @@ class OrcaException implements Exception {
 }
 
 class OrcaBridge {
-  static const _allowedCommands = {'init', 'add', 'list', 'get', 'gen'};
+  static const _allowedCommands = {'init', 'add', 'list', 'get', 'gen', 'delete'};
   static final _valuePattern = RegExp(r'^[A-Za-z0-9_.-]{1,256}$');
 
   static String? _binaryPath;
