@@ -342,11 +342,32 @@ func validatePath(path string) error {
 			return fmt.Errorf("invalid path: NUL byte")
 		}
 	}
-	for _, part := range strings.Split(path, string(os.PathSeparator)) {
+	// normalize separators
+	norm := strings.ReplaceAll(path, "/", string(os.PathSeparator))
+	norm = strings.ReplaceAll(norm, "\\", string(os.PathSeparator))
+	for _, part := range strings.Split(norm, string(os.PathSeparator)) {
 		if part == ".." {
 			return fmt.Errorf("invalid path: traversal component")
 		}
 	}
+	// walk prefixes, reject symlink components
+	cur := ""
+	for _, part := range strings.Split(norm, string(os.PathSeparator)) {
+		if part == "" {
+			continue
+		}
+		if cur == "" {
+			if filepath.IsAbs(path) {
+				cur = string(os.PathSeparator)
+			}
+		}
+		cur = filepath.Join(cur, part)
+		fi, err := os.Lstat(cur)
+		if err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("vault path has symlink component: %s", cur)
+		}
+	}
+	// final check
 	fi, err := os.Lstat(path)
 	if err == nil && fi.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("vault path is a symlink")
@@ -370,18 +391,32 @@ func cmdImport() {
 		fmt.Println("error:", err)
 		os.Exit(1)
 	}
-	fi, err := os.Stat(os.Args[2])
+	fi, err := os.Lstat(os.Args[2])
 	if err != nil {
 		fmt.Println("error:", err)
+		os.Exit(1)
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		fmt.Println("error: import path is a symlink")
 		os.Exit(1)
 	}
 	if fi.Size() > 10*1024*1024 {
 		fmt.Println("error: import file too large")
 		os.Exit(1)
 	}
-	data, err := os.ReadFile(os.Args[2])
+	f, err := os.Open(os.Args[2])
 	if err != nil {
 		fmt.Println("error:", err)
+		os.Exit(1)
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, 10*1024*1024+1))
+	if err != nil {
+		fmt.Println("error:", err)
+		os.Exit(1)
+	}
+	if len(data) > 10*1024*1024 {
+		fmt.Println("error: import file too large")
 		os.Exit(1)
 	}
 	path := vaultPath()
