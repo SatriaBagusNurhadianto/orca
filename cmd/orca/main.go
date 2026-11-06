@@ -42,6 +42,10 @@ func main() {
 		cmdGen()
 	case "delete":
 		cmdDelete()
+	case "export":
+		cmdExport()
+	case "import":
+		cmdImport()
 	default:
 		usage()
 		os.Exit(2)
@@ -50,7 +54,7 @@ func main() {
 
 func usage() {
 	fmt.Println("orca - personal password manager")
-	fmt.Println("commands: init, add, list, get, gen, delete")
+	fmt.Println("commands: init, add, list, get, gen, delete, export, import")
 }
 
 func vaultPath() string {
@@ -247,6 +251,95 @@ func cmdDelete() {
 		os.Exit(1)
 	}
 	fmt.Println("deleted:", id)
+}
+
+func cmdExport() {
+	path := vaultPath()
+	pw := readPassword("Master password: ")
+	v, _, err := vault.Load(path, pw)
+	if err != nil {
+		fmt.Println("error:", err)
+		os.Exit(1)
+	}
+	out := "title,username,password,url,notes\n"
+	for _, e := range v.Entries {
+		if e.Deleted {
+			continue
+		}
+		out += csvField(e.Title) + "," + csvField(e.Username) + "," + csvField(e.Password) + "," + csvField(e.URL) + "," + csvField(e.Notes) + "\n"
+	}
+	if len(os.Args) >= 3 {
+		if err := os.WriteFile(os.Args[2], []byte(out), 0600); err != nil {
+			fmt.Println("error:", err)
+			os.Exit(1)
+		}
+		fmt.Println("exported to", os.Args[2])
+	} else {
+		fmt.Print(out)
+	}
+}
+
+func cmdImport() {
+	if len(os.Args) < 3 {
+		fmt.Println("usage: orca import <file>")
+		os.Exit(2)
+	}
+	data, err := os.ReadFile(os.Args[2])
+	if err != nil {
+		fmt.Println("error:", err)
+		os.Exit(1)
+	}
+	path := vaultPath()
+	pw := readPassword("Master password: ")
+	v, kdf, err := vault.Load(path, pw)
+	if err != nil {
+		fmt.Println("error:", err)
+		os.Exit(1)
+	}
+	lines := strings.Split(string(data), "\n")
+	for i, line := range lines {
+		if i == 0 || strings.TrimSpace(line) == "" {
+			continue
+		}
+		fields := parseCSVLine(line)
+		if len(fields) < 3 {
+			continue
+		}
+		id, _ := newID()
+		e := vault.Entry{
+			ID:       id,
+			Title:    fields[0],
+			Username: safeField(fields, 1),
+			Password: safeField(fields, 2),
+			URL:      safeField(fields, 3),
+			Notes:    safeField(fields, 4),
+		}
+		v.Entries = append(v.Entries, e)
+	}
+	if err := vault.Save(path, pw, v, kdf); err != nil {
+		fmt.Println("error:", err)
+		os.Exit(1)
+	}
+	fmt.Println("imported")
+}
+
+func csvField(s string) string {
+	if strings.ContainsAny(s, ",\"\n") {
+		return "\"" + strings.ReplaceAll(s, "\"", "\"\"") + "\""
+	}
+	return s
+}
+
+func parseCSVLine(line string) []string {
+	// simple split, no quoted commas handling for v1
+	return strings.Split(line, ",")
+}
+
+func safeField(fields []string, idx int) string {
+	if idx < len(fields) {
+		return strings.TrimSpace(fields[idx])
+	}
+	return ""
 }
 
 func cmdGen() {
