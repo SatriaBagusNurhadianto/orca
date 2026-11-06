@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/services.dart';
 
 class OrcaException implements Exception {
@@ -39,24 +41,28 @@ class OrcaBridge {
     }
   }
 
-  static Future<String> run(List<String> args, {String? stdin}) async {
+  static void _writeField(IOSink sink, String value) {
+    final bytes = utf8.encode(value);
+    final header = ByteData(4);
+    header.setUint32(0, bytes.length, Endian.big);
+    sink.add(header.buffer.asUint8List());
+    sink.add(bytes);
+  }
+
+  static Future<String> run(List<String> args, {List<String>? stdinFields}) async {
     _validateArgs(args);
-    if (stdin != null && (stdin.contains('\n') || stdin.contains('\r'))) {
-      // Passwords must not contain newlines (would break framing).
-      throw OrcaException('operation failed');
-    }
     final bin = await _resolveBinary();
     Process? proc;
     try {
       proc = await Process.start(bin, args).timeout(const Duration(seconds: 30));
-      if (stdin != null) {
-        proc.stdin.write(stdin);
+      if (stdinFields != null) {
+        for (final f in stdinFields) {
+          _writeField(proc.stdin, f);
+        }
         await proc.stdin.close();
       }
-      final outFuture = proc.stdout.transform(const SystemEncoding().decoder).join();
-      final errFuture = proc.stderr.transform(const SystemEncoding().decoder).join();
-      final out = await outFuture.timeout(const Duration(seconds: 30));
-      await errFuture.timeout(const Duration(seconds: 30));
+      final out = await proc.stdout.transform(const SystemEncoding().decoder).join().timeout(const Duration(seconds: 30));
+      await proc.stderr.transform(const SystemEncoding().decoder).join().timeout(const Duration(seconds: 30));
       final code = await proc.exitCode.timeout(const Duration(seconds: 30));
       if (code != 0) {
         throw OrcaException('operation failed');

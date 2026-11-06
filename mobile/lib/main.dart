@@ -27,7 +27,7 @@ class _UnlockScreenState extends State<UnlockScreen> {
   Future<void> _unlock() async {
     try {
       final pw = _ctrl.text;
-      final out = await OrcaBridge.run(['list'], stdin: '$pw\n');
+      final out = await OrcaBridge.run(['list'], stdinFields: [pw]);
       _ctrl.clear();
       setState(() {
         _entries = out.trim().split('\n').where((e) => e.isNotEmpty).toList();
@@ -49,10 +49,9 @@ class _UnlockScreenState extends State<UnlockScreen> {
     // Re-prompt master password via a simple dialog.
     final pw = await _promptPassword();
     if (pw == null) return;
-    final stdin = '$pw\n${result['title']}\n${result['username']}\n${result['password']}\n${result['url']}\n${result['notes']}\n';
     try {
-      await OrcaBridge.run(['add'], stdin: stdin);
-      final out = await OrcaBridge.run(['list'], stdin: '$pw\n');
+      await OrcaBridge.run(['add'], stdinFields: [pw, result['title']!, result['username']!, result['password']!, result['url']!, result['notes']!]);
+      final out = await OrcaBridge.run(['list'], stdinFields: [pw]);
       setState(() {
         _entries = out.trim().split('\n').where((e) => e.isNotEmpty).toList();
         _status = 'Entry added';
