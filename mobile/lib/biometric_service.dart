@@ -14,6 +14,7 @@ class BiometricService {
   /// Returns true only on successful strong-biometric auth.
   /// Any failure/cancellation/unavailable returns false (fail closed).
   Future<bool> authenticate() async {
+    if (!await canCheck()) return false;
     try {
       return await _auth.authenticate(
         localizedReason: 'Unlock Orca vault',

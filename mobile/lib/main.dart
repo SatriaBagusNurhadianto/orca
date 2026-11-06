@@ -105,8 +105,8 @@ class _UnlockScreenState extends State<UnlockScreen> {
         title: const Text('Master password'),
         content: TextField(controller: ctrl, obscureText: true),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(ctx, ctrl.text), child: const Text('OK')),
+          TextButton(onPressed: () { ctrl.clear(); Navigator.pop(ctx); }, child: const Text('Cancel')),
+          TextButton(onPressed: () { final v = ctrl.text; ctrl.clear(); Navigator.pop(ctx, v); }, child: const Text('OK')),
         ],
       ),
     );
@@ -202,6 +202,7 @@ class EntryDetailScreen extends StatefulWidget {
 
 class _EntryDetailScreenState extends State<EntryDetailScreen> {
   late final TextEditingController _ctrl = TextEditingController(text: widget.text);
+  bool _reveal = false;
   @override
   void dispose() {
     _ctrl.clear();
@@ -214,11 +215,19 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
       appBar: AppBar(title: const Text('Entry Detail')),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: TextField(
-          controller: _ctrl,
-          readOnly: true,
-          maxLines: null,
-          obscureText: false,
+        child: Column(
+          children: [
+            TextField(
+              controller: _ctrl,
+              readOnly: true,
+              maxLines: null,
+              obscureText: !_reveal,
+            ),
+            TextButton(
+              onPressed: () => setState(() => _reveal = !_reveal),
+              child: Text(_reveal ? 'Hide' : 'Reveal'),
+            ),
+          ],
         ),
       ),
     );
