@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/csv"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"math/big"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"golang.org/x/term"
@@ -254,6 +256,20 @@ func cmdDelete() {
 }
 
 func cmdExport() {
+	plaintext := false
+	outPath := ""
+	for i := 2; i < len(os.Args); i++ {
+		if os.Args[i] == "--plaintext" {
+			plaintext = true
+		} else if os.Args[i] == "-o" && i+1 < len(os.Args) {
+			outPath = os.Args[i+1]
+			i++
+		}
+	}
+	if !plaintext && outPath == "" {
+		fmt.Println("error: export requires -o <path> or --plaintext")
+		os.Exit(2)
+	}
 	path := vaultPath()
 	pw := readPassword("Master password: ")
 	v, _, err := vault.Load(path, pw)
@@ -261,28 +277,107 @@ func cmdExport() {
 		fmt.Println("error:", err)
 		os.Exit(1)
 	}
-	out := "title,username,password,url,notes\n"
+	var buf strings.Builder
+	w := csv.NewWriter(&buf)
+	w.Write([]string{"title", "username", "password", "url", "notes"})
 	for _, e := range v.Entries {
 		if e.Deleted {
 			continue
 		}
-		out += csvField(e.Title) + "," + csvField(e.Username) + "," + csvField(e.Password) + "," + csvField(e.URL) + "," + csvField(e.Notes) + "\n"
+		w.Write([]string{csvEscape(e.Title), csvEscape(e.Username), csvEscape(e.Password), csvEscape(e.URL), csvEscape(e.Notes)})
 	}
-	if len(os.Args) >= 3 {
-		if err := os.WriteFile(os.Args[2], []byte(out), 0600); err != nil {
-			fmt.Println("error:", err)
-			os.Exit(1)
+	w.Flush()
+	if err := w.Error(); err != nil {
+		fmt.Println("error:", err)
+		os.Exit(1)
+	}
+	data := []byte(buf.String())
+	if plaintext {
+		fmt.Fprint(os.Stderr, "WARNING: plaintext export - credentials will be visible\n")
+		fmt.Print(string(data))
+		return
+	}
+	if err := validatePath(outPath); err != nil {
+		fmt.Println("error:", err)
+		os.Exit(1)
+	}
+	dir := filepath.Dir(outPath)
+	if dir == "" {
+		dir = "."
+	}
+	tmp, err := os.CreateTemp(dir, ".export-*")
+	if err != nil {
+		fmt.Println("error:", err)
+		os.Exit(1)
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		fmt.Println("error:", err)
+		os.Exit(1)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		fmt.Println("error:", err)
+		os.Exit(1)
+	}
+	tmp.Close()
+	if err := os.Rename(tmpName, outPath); err != nil {
+		os.Remove(tmpName)
+		fmt.Println("error:", err)
+		os.Exit(1)
+	}
+	os.Chmod(outPath, 0600)
+	fmt.Println("exported to", outPath)
+}
+
+func validatePath(path string) error {
+	if path == "" {
+		return fmt.Errorf("empty path")
+	}
+	for i := 0; i < len(path); i++ {
+		if path[i] == 0 {
+			return fmt.Errorf("invalid path: NUL byte")
 		}
-		fmt.Println("exported to", os.Args[2])
-	} else {
-		fmt.Print(out)
 	}
+	for _, part := range strings.Split(path, string(os.PathSeparator)) {
+		if part == ".." {
+			return fmt.Errorf("invalid path: traversal component")
+		}
+	}
+	fi, err := os.Lstat(path)
+	if err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("vault path is a symlink")
+	}
+	return nil
+}
+
+func csvEscape(s string) string {
+	if len(s) > 0 && (s[0] == '=' || s[0] == '+' || s[0] == '-' || s[0] == '@') {
+		return "	" + s
+	}
+	return s
 }
 
 func cmdImport() {
 	if len(os.Args) < 3 {
 		fmt.Println("usage: orca import <file>")
 		os.Exit(2)
+	}
+	if err := validatePath(os.Args[2]); err != nil {
+		fmt.Println("error:", err)
+		os.Exit(1)
+	}
+	fi, err := os.Stat(os.Args[2])
+	if err != nil {
+		fmt.Println("error:", err)
+		os.Exit(1)
+	}
+	if fi.Size() > 10*1024*1024 {
+		fmt.Println("error: import file too large")
+		os.Exit(1)
 	}
 	data, err := os.ReadFile(os.Args[2])
 	if err != nil {
@@ -296,23 +391,37 @@ func cmdImport() {
 		fmt.Println("error:", err)
 		os.Exit(1)
 	}
-	lines := strings.Split(string(data), "\n")
-	for i, line := range lines {
-		if i == 0 || strings.TrimSpace(line) == "" {
+	r := csv.NewReader(strings.NewReader(string(data)))
+	records, err := r.ReadAll()
+	if err != nil {
+		fmt.Println("error:", err)
+		os.Exit(1)
+	}
+	for i, rec := range records {
+		if i == 0 {
 			continue
 		}
-		fields := parseCSVLine(line)
-		if len(fields) < 3 {
+		if len(rec) < 3 {
 			continue
 		}
-		id, _ := newID()
+		for _, f := range rec {
+			if len(f) > 4096 {
+				fmt.Println("error: field too long")
+				os.Exit(1)
+			}
+		}
+		id, err := newID()
+		if err != nil {
+			fmt.Println("error:", err)
+			os.Exit(1)
+		}
 		e := vault.Entry{
 			ID:       id,
-			Title:    fields[0],
-			Username: safeField(fields, 1),
-			Password: safeField(fields, 2),
-			URL:      safeField(fields, 3),
-			Notes:    safeField(fields, 4),
+			Title:    rec[0],
+			Username: safeField(rec, 1),
+			Password: safeField(rec, 2),
+			URL:      safeField(rec, 3),
+			Notes:    safeField(rec, 4),
 		}
 		v.Entries = append(v.Entries, e)
 	}
@@ -328,11 +437,6 @@ func csvField(s string) string {
 		return "\"" + strings.ReplaceAll(s, "\"", "\"\"") + "\""
 	}
 	return s
-}
-
-func parseCSVLine(line string) []string {
-	// simple split, no quoted commas handling for v1
-	return strings.Split(line, ",")
 }
 
 func safeField(fields []string, idx int) string {
