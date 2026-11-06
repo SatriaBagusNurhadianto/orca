@@ -1,6 +1,6 @@
 # Binaries
-orca
-*.exe
+/orca
+/orca.exe
 *.out
 
 # Vault files
