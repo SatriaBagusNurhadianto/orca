@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'orca_bridge.dart';
+import 'biometric_service.dart';
 
 void main() => runApp(const OrcaApp());
 
@@ -23,6 +24,7 @@ class _UnlockScreenState extends State<UnlockScreen> {
   String _status = '';
   List<String> _entries = [];
   bool _unlocked = false;
+  final _bio = BiometricService();
 
   Future<void> _unlock() async {
     try {
@@ -36,6 +38,40 @@ class _UnlockScreenState extends State<UnlockScreen> {
       });
     } catch (e) {
       _ctrl.clear();
+      setState(() => _status = 'Error: $e');
+    }
+  }
+
+  Future<void> _unlockBiometric() async {
+    final ok = await _bio.authenticate();
+    if (!ok) {
+      setState(() => _status = 'Biometric failed; use master password');
+      return;
+    }
+    // Biometric is a gate only; still need master password to decrypt.
+    final pw = await _promptPassword();
+    if (pw == null) return;
+    try {
+      final out = await OrcaBridge.run(['list'], stdinFields: [pw]);
+      setState(() {
+        _entries = out.trim().split('\n').where((e) => e.isNotEmpty).toList();
+        _status = 'Unlocked (biometric)';
+        _unlocked = true;
+      });
+    } catch (e) {
+      setState(() => _status = 'Error: $e');
+    }
+  }
+
+  Future<void> _openDetail(String entry) async {
+    final id = entry.split('\t').first;
+    final pw = await _promptPassword();
+    if (pw == null) return;
+    try {
+      final out = await OrcaBridge.run(['get', id], stdinFields: [pw]);
+      if (!mounted) return;
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => EntryDetailScreen(text: out)));
+    } catch (e) {
       setState(() => _status = 'Error: $e');
     }
   }
@@ -95,12 +131,14 @@ class _UnlockScreenState extends State<UnlockScreen> {
               ),
               const SizedBox(height: 12),
               ElevatedButton(onPressed: _unlock, child: const Text('Unlock')),
+              const SizedBox(width: 8),
+              ElevatedButton(onPressed: _unlockBiometric, child: const Text('Biometric')),
             ],
             const SizedBox(height: 12),
             Text(_status),
             Expanded(
               child: ListView(
-                children: _entries.map((e) => ListTile(title: Text(e))).toList(),
+                children: _entries.map((e) => ListTile(title: Text(e), onTap: () => _openDetail(e))).toList(),
               ),
             ),
           ],
@@ -148,6 +186,39 @@ class _AddEntryScreenState extends State<AddEntryScreen> {
               child: const Text('Save'),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+
+class EntryDetailScreen extends StatefulWidget {
+  final String text;
+  const EntryDetailScreen({super.key, required this.text});
+  @override
+  State<EntryDetailScreen> createState() => _EntryDetailScreenState();
+}
+
+class _EntryDetailScreenState extends State<EntryDetailScreen> {
+  late final TextEditingController _ctrl = TextEditingController(text: widget.text);
+  @override
+  void dispose() {
+    _ctrl.clear();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Entry Detail')),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: TextField(
+          controller: _ctrl,
+          readOnly: true,
+          maxLines: null,
+          obscureText: false,
         ),
       ),
     );
