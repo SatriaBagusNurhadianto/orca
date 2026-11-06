@@ -15,3 +15,7 @@ Orca uses Argon2id (key derivation) and XChaCha20-Poly1305 (AEAD). No custom cry
 
 ## Mobile (Flutter) bridge note
 Dart `String` is immutable and cannot be zeroed in memory. Master passwords and derived values held in Dart remain until GC. Mitigations: password is passed via stdin only (never argv/env), never logged, and the TextField controller is cleared on unlock success/failure. All crypto stays in the Go core; Flutter handles UI, biometric gating, and storage only. Biometric unlock re-derives from the master password on failure and never caches the derived key.
+
+
+## TOTP note
+TOTP secrets are stored in the vault and decrypted into immutable Go strings at runtime; they cannot be zeroed from memory (same limitation as the master password). They are excluded from CSV export. Generate secrets with `orca totp --gen` and treat the printed secret as sensitive.

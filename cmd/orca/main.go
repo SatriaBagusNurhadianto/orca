@@ -487,6 +487,7 @@ func safeField(fields []string, idx int) string {
 
 func cmdTotp() {
 	if len(os.Args) >= 2 && os.Args[2] == "--gen" {
+		fmt.Fprintln(os.Stderr, "WARNING: secret will be visible - pipe to a QR generator (e.g. qrencode -t ansiutf8)")
 		sec, err := totp.GenerateSecret()
 		if err != nil {
 			fmt.Println("error:", err)
