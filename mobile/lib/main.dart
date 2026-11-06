@@ -154,7 +154,29 @@ class _UnlockScreenState extends State<UnlockScreen> {
             Text(_status),
             Expanded(
               child: ListView(
-                children: _entries.map((e) => Dismissible(key: ValueKey(e), onDismissed: (_) => _deleteEntry(e), background: Container(color: Colors.red), child: ListTile(title: Text(e), onTap: () => _openDetail(e)))).toList(),
+                children: _entries.map((e) => Dismissible(
+          key: ValueKey(e),
+          background: Container(color: Colors.red),
+          onDismissed: (_) async {
+            final confirm = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Delete entry?'),
+                content: Text('Delete "$e"?'),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                  TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+                ],
+              ),
+            );
+            if (confirm == true) {
+              await _deleteEntry(e);
+            } else {
+              setState(() {});
+            }
+          },
+          child: ListTile(title: Text(e), onTap: () => _openDetail(e)),
+        )).toList(),
               ),
             ),
           ],
